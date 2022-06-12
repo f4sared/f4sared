@@ -143,14 +143,14 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
         schema_gen,
         example_validator,
         trainer,
-        pusher,
+#       pusher,
     ]
 
     return tfx.dsl.Pipeline(
         pipeline_name=pipeline_name,
         pipeline_root=pipeline_root,
         components=components,
-        enable_cache=True)
+        enable_cache=False)
 
 def compile_pipeline(pl):
     import os
