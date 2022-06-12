@@ -1,4 +1,5 @@
 kfp==1.8.1
+tensorflow==2.8.2
 google-cloud-bigquery==2.26.0
 google-cloud-bigquery-storage==2.7.0
 google-cloud-aiplatform==1.4.2
