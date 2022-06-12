@@ -26,7 +26,7 @@ steps:
         "--single-branch",
         "--branch",
         "main",
-        "https://github.com/annanguyen19/mle-taxi-fare-prediction",
+        "https://github.com/f4sared/f4sared",
         "--depth",
         "1",
         "--verbose",
