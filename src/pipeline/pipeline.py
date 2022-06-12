@@ -116,25 +116,25 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
         serving_image = 'us-docker.pkg.dev/vertex-ai/prediction/tf2-gpu.2-6:latest'
         
     # NEW: Pushes the model to Vertex AI.
-#    pusher = tfx.extensions.google_cloud_ai_platform.Pusher(
-#        model=trainer.outputs['model'],
-#        custom_config={
-#            tfx.extensions.google_cloud_ai_platform.ENABLE_VERTEX_KEY:
-#                True,
-#            tfx.extensions.google_cloud_ai_platform.VERTEX_REGION_KEY:
-#                region,
-#            tfx.extensions.google_cloud_ai_platform.VERTEX_CONTAINER_IMAGE_URI_KEY:
-#                serving_image,
-#            tfx.extensions.google_cloud_ai_platform.SERVING_ARGS_KEY:
-#                vertex_serving_spec,
-#        })
+    pusher = tfx.extensions.google_cloud_ai_platform.Pusher(
+        model=trainer.outputs['model'],
+        custom_config={
+            tfx.extensions.google_cloud_ai_platform.ENABLE_VERTEX_KEY:
+                True,
+            tfx.extensions.google_cloud_ai_platform.VERTEX_REGION_KEY:
+                region,
+            tfx.extensions.google_cloud_ai_platform.VERTEX_CONTAINER_IMAGE_URI_KEY:
+                serving_image,
+            tfx.extensions.google_cloud_ai_platform.SERVING_ARGS_KEY:
+                vertex_serving_spec,
+        })
 
     # # Pushes the model to a filesystem destination.
-    pusher = tfx.components.Pusher(
-         model=trainer.outputs['model'],
-         push_destination=tfx.proto.PushDestination(
-             filesystem=tfx.proto.PushDestination.Filesystem(
-                 base_directory=serving_model_dir)))
+#    pusher = tfx.components.Pusher(
+#         model=trainer.outputs['model'],
+#         push_destination=tfx.proto.PushDestination(
+#             filesystem=tfx.proto.PushDestination.Filesystem(
+#                 base_directory=serving_model_dir)))
 
     # Following three components will be included in the pipeline.
     components = [
