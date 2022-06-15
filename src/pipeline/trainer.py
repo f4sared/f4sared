@@ -173,7 +173,7 @@ def _make_one_hot(x, key):
                                  on_value=1.0,
                                  off_value=0.0)
     
-    return tf.reshape(one_hot_encoded, [-1, depth]
+    return tf.reshape(one_hot_encoded, [-1, depth])
 
 def preprocessing_fn(inputs):
 
