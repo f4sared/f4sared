@@ -208,24 +208,24 @@ def preprocessing_fn(inputs):
 
   LABEL_KEY = 'trip_total'  
  
-  def transformed_name(key):
-    return key + '_xf'
+  # def transformed_name(key):
+  #   return key + '_xf'
   
   ##############################################################
      
   outputs = {}
   
-  # Scale numerical features.
-  for key in NUMERIC_FEATURE_KEYS:
-    outputs[transformed_name(key)] = tft.scale_to_z_score(
-        _fill_in_missing(inputs[key]), name=key)
+#   # Scale numerical features.
+#   for key in NUMERIC_FEATURE_KEYS:
+#     outputs[transformed_name(key)] = tft.scale_to_z_score(
+#         _fill_in_missing(inputs[key]), name=key)
 
-  # One hot encode the categorical features.
-  for key in CATEGORICAL_FEATURE_KEYS:
-    outputs[transformed_name(key)] = _make_one_hot(_fill_in_missing(inputs[key]), key)
+#   # One hot encode the categorical features.
+#   for key in CATEGORICAL_FEATURE_KEYS:
+#     outputs[transformed_name(key)] = _make_one_hot(_fill_in_missing(inputs[key]), key)
 
-  # Convert Cover_Type to dense tensor.
-  outputs[transformed_name(LABEL_KEY)] = _fill_in_missing(
-      inputs[LABEL_KEY])
+#   # Convert Cover_Type to dense tensor.
+#   outputs[transformed_name(LABEL_KEY)] = _fill_in_missing(
+#       inputs[LABEL_KEY])
   
   return outputs
