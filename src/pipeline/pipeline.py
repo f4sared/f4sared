@@ -63,6 +63,11 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
     schema_gen = tfx.components.SchemaGen(statistics=statistics_gen.outputs['statistics'],infer_feature_shape=False)
 
     example_validator = tfx.components.ExampleValidator(statistics=statistics_gen.outputs['statistics'],schema=schema_gen.outputs['schema'])
+    
+    transform = tfx.components.Transform(
+    examples=example_gen.outputs['examples'],
+    schema=schema_gen.outputs['schema'],
+    module_file=module_file)
 
     # Trains a model using Vertex AI Training.
     # NEW: We need to specify a Trainer for GCP with related configs.
@@ -169,9 +174,10 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
         statistics_gen,
         schema_gen,
         example_validator,
-        trainer,
-        model_analyzer,
-        pusher,
+        transform,
+        # trainer,
+        # model_analyzer,
+        # pusher,
     ]
 
     return tfx.dsl.Pipeline(
@@ -211,3 +217,5 @@ def run_pipeline(pl):
                                     display_name=pl)
     job.run(sync=False)
     return "success"
+
+
