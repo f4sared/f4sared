@@ -71,21 +71,27 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
 
     # Trains a model using Vertex AI Training.
     # NEW: We need to specify a Trainer for GCP with related configs.
-    trainer = tfx.extensions.google_cloud_ai_platform.Trainer(
+    # trainer = tfx.extensions.google_cloud_ai_platform.Trainer(
+    trainer = tfx.components.Trainer(
         module_file=module_file,
-        examples=example_gen.outputs['examples'],
+        # examples=example_gen.outputs['examples'],
+        #############
+        examples=transform.outputs['transformed_examples'],
+        transform_graph=transform.outputs['transform_graph'],
+        schema=schema_gen.outputs['schema'],
+        #############
         train_args=tfx.proto.TrainArgs(num_steps=1600), #66k/128
-        eval_args=tfx.proto.EvalArgs(num_steps=1600), #34k/64
-        custom_config={
-            tfx.extensions.google_cloud_ai_platform.ENABLE_VERTEX_KEY:
-                True,
-            tfx.extensions.google_cloud_ai_platform.VERTEX_REGION_KEY:
-                region,
-            tfx.extensions.google_cloud_ai_platform.TRAINING_ARGS_KEY:
-                vertex_job_spec,
-            'use_gpu':
-                use_gpu,
-        })
+        eval_args=tfx.proto.EvalArgs(num_steps=1600),) #34k/64
+        # custom_config={
+        #     tfx.extensions.google_cloud_ai_platform.ENABLE_VERTEX_KEY:
+        #         True,
+        #     tfx.extensions.google_cloud_ai_platform.VERTEX_REGION_KEY:
+        #         region,
+        #     tfx.extensions.google_cloud_ai_platform.TRAINING_ARGS_KEY:
+        #         vertex_job_spec,
+        #     'use_gpu':
+        #         use_gpu,
+        # })
 
     
     # Eval component      
@@ -101,12 +107,7 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
                            threshold=accuracy_threshold),
                        tfma.MetricConfig(class_name='MeanSquaredError')])
 
-    eval_config = tfma.EvalConfig(
-        model_specs=[
-            tfma.ModelSpec(label_key='trip_total')
-                    ],
-        metrics_specs=[metrics_specs],
-            slicing_specs=[tfma.SlicingSpec()])
+    eval_config = tfma.EvalConfig(model_specs=[tfma.ModelSpec(label_key='trip_total')], metrics_specs=[metrics_specs], slicing_specs=[tfma.SlicingSpec()])
     
     model_analyzer = tfx.components.Evaluator(
     examples=example_gen.outputs['examples'],
@@ -161,12 +162,12 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
                 vertex_serving_spec,
         })
 
-    # # Pushes the model to a filesystem destination.
-#    pusher = tfx.components.Pusher(
-#         model=trainer.outputs['model'],
-#         push_destination=tfx.proto.PushDestination(
-#             filesystem=tfx.proto.PushDestination.Filesystem(
-#                 base_directory=serving_model_dir)))
+   #  # Pushes the model to a filesystem destination.
+   # pusher = tfx.components.Pusher(
+   #      model=trainer.outputs['model'],
+   #      push_destination=tfx.proto.PushDestination(
+   #          filesystem=tfx.proto.PushDestination.Filesystem(
+   #              base_directory=serving_model_dir)))
 
     # Following three components will be included in the pipeline.
     components = [
@@ -175,7 +176,7 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
         schema_gen,
         example_validator,
         transform,
-        # trainer,
+        trainer,
         # model_analyzer,
         # pusher,
     ]
