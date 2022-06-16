@@ -29,7 +29,8 @@ _EVAL_BATCH_SIZE = 20 # 64
 #     _LABEL_KEY: tf.io.FixedLenFeature(shape=[1], dtype=tf.float32)
 # }
 
-
+# 1. Input function to read the input to the main function block run_fn
+####################################################################
 def _input_fn(file_pattern: List[str],
               data_accessor: tfx.components.DataAccessor,
               # schema: schema_pb2.Schema,
@@ -43,7 +44,8 @@ def _input_fn(file_pattern: List[str],
         # schema=schema).repeat()
         tf_transform_output.transformed_metadata.schema)
 
-
+# 2. function block to make the ANN
+####################################################################
 def _make_keras_model(tf_transform_output: TFTransformOutput) -> tf.keras.Model:
     
     # read the inputs to the function 
@@ -99,6 +101,8 @@ def _make_keras_model(tf_transform_output: TFTransformOutput) -> tf.keras.Model:
     # return model
     return tf.keras.Model(inputs=inputs, outputs=output)
 
+# 3. function block relating to the training on vertex A.I
+####################################################################
 # NEW: Read `use_gpu` from the custom_config of the Trainer.
 #      if it uses GPU, enable MirroredStrategy.
 def _get_distribution_strategy(fn_args: tfx.components.FnArgs):
@@ -107,6 +111,79 @@ def _get_distribution_strategy(fn_args: tfx.components.FnArgs):
         return tf.distribute.MirroredStrategy(devices=['device:GPU:0'])
     return None
 
+# fb 1 to be used in export_serving_model   
+####################################################################
+def _get_tf_examples_serving_signature(model, tf_transform_output):
+    """Returns a serving signature that accepts `tensorflow.Example`."""
+
+  # We need to track the layers in the model in order to save it.
+  # TODO(b/162357359): Revise once the bug is resolved.
+    model.tft_layer_inference = tf_transform_output.transform_features_layer()
+
+    @tf.function(input_signature=[tf.TensorSpec(shape=[None], dtype=tf.string, name='examples')])
+    
+    def serve_tf_examples_fn(serialized_tf_example):
+        """Returns the output to be used in the serving signature."""
+        raw_feature_spec = tf_transform_output.raw_feature_spec()
+        # Remove label feature since these will not be present at serving time.
+        raw_feature_spec.pop(_LABEL_KEY)
+        raw_features = tf.io.parse_example(serialized_tf_example, raw_feature_spec)
+        transformed_features = model.tft_layer_inference(raw_features)
+        logging.info('serve_transformed_features = %s', transformed_features)
+
+        outputs = model(transformed_features)
+        # TODO(b/154085620): Convert the predicted labels from the model using a
+        # reverse-lookup (opposite of transform.py).
+        return {'outputs': outputs}
+
+    return serve_tf_examples_fn
+
+# fb 2 to be used in export_serving_model   
+####################################################################
+def _get_transform_features_signature(model, tf_transform_output):
+  # """Returns a serving signature that applies tf.Transform to features."""
+
+  # We need to track the layers in the model in order to save it.
+  # TODO(b/162357359): Revise once the bug is resolved.
+    model.tft_layer_eval = tf_transform_output.transform_features_layer()
+
+    @tf.function(input_signature=[
+      tf.TensorSpec(shape=[None], dtype=tf.string, name='examples')
+    ])
+    def transform_features_fn(serialized_tf_example):
+        """Returns the transformed_features to be fed as input to evaluator."""
+        raw_feature_spec = tf_transform_output.raw_feature_spec()
+        raw_features = tf.io.parse_example(serialized_tf_example, raw_feature_spec)
+        transformed_features = model.tft_layer_eval(raw_features)
+        logging.info('eval_transformed_features = %s', transformed_features)
+        return transformed_features
+
+    return transform_features_fn
+
+# function to save the trained model  
+####################################################################
+def export_serving_model(tf_transform_output, model, output_dir):
+    """Exports a keras model for serving.
+    Args:
+    tf_transform_output: Wrapper around output of tf.Transform.
+    model: A keras model to export for serving.
+    output_dir: A directory where the model will be exported to.
+    """
+    # The layer has to be saved to the model for keras tracking purpases.
+    model.tft_layer = tf_transform_output.transform_features_layer()
+
+    signatures = {
+      'serving_default':
+          _get_tf_examples_serving_signature(model, tf_transform_output),
+      'transform_features':
+          _get_transform_features_signature(model, tf_transform_output),
+    }
+
+    model.save(output_dir, save_format='tf', signatures=signatures)
+
+
+# main function block 
+####################################################################
 # TFX Trainer  tfx.components.Trainer will call this function.
 def run_fn(fn_args: tfx.components.FnArgs):
 
@@ -161,9 +238,10 @@ def run_fn(fn_args: tfx.components.FnArgs):
         validation_steps=fn_args.eval_steps,
         callbacks=[tensorboard_callback])
 
-  # The result of the training should be saved in `fn_args.serving_model_dir`
-  # directory.
-    model.save(fn_args.serving_model_dir, save_format='tf')
+    # The result of the training should be saved in `fn_args.serving_model_dir`
+    # directory.
+    # model.save(fn_args.serving_model_dir, save_format='tf')
+    export_serving_model(tf_transform_output, model, fn_args.serving_model_dir)
     
 
 #########################################################################################
