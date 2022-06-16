@@ -218,5 +218,3 @@ def run_pipeline(pl):
                                     display_name=pl)
     job.run(sync=False)
     return "success"
-
-
