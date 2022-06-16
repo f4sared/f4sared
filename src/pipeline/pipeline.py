@@ -97,8 +97,8 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
     # Eval component      
     accuracy_threshold = tfma.MetricThreshold(
                 value_threshold=tfma.GenericValueThreshold(
-                    lower_bound={'value': 2.0},
-                    upper_bound={'value': 5.0})
+                    lower_bound={'value': 1.0},
+                    upper_bound={'value': 4.0})
                 )
 
     metrics_specs = tfma.MetricsSpec(
@@ -110,9 +110,9 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
     eval_config = tfma.EvalConfig(model_specs=[tfma.ModelSpec(label_key='trip_total')], metrics_specs=[metrics_specs], slicing_specs=[tfma.SlicingSpec()])
     
     model_analyzer = tfx.components.Evaluator(
-    examples=example_gen.outputs['examples'],
-    model=trainer.outputs['model'],
-    eval_config=eval_config)
+        examples=example_gen.outputs['examples'],
+        model=trainer.outputs['model'],
+        eval_config=eval_config)
                 
     # # Uses user-provided Python function that trains a model.
     # trainer = tfx.components.Trainer(
@@ -177,7 +177,7 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
         example_validator,
         transform,
         trainer,
-        # model_analyzer,
+        model_analyzer,
         # pusher,
     ]
 
