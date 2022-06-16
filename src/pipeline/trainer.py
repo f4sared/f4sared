@@ -278,7 +278,7 @@ def preprocessing_fn(inputs):
 
     NUMERIC_FEATURE_KEYS = ['pickup_latitude', 'pickup_longitude', 'dropoff_latitude', 'dropoff_longitude','euclidean']
 
-    CATEGORICAL_FEATURE_KEYS = ['month']
+    CATEGORICAL_FEATURE_KEYS = ['month','day']
 
     LABEL_KEY = 'trip_total'  
   
