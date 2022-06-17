@@ -11,23 +11,31 @@ from tensorflow_transform import TFTransformOutput
 from tfx import v1 as tfx
 from tfx_bsl.public import tfxio
 from tensorflow_metadata.proto.v0 import schema_pb2
+import keras_tuner
 
-
-# _FEATURE_KEYS = ['pickup_latitude', 'pickup_longitude', 'dropoff_latitude', 'dropoff_longitude', 'euclidean','month']
 _LABEL_KEY = 'trip_total'
-# _LABEL_KEY = 'trip_total_xf'
 
 _TRAIN_BATCH_SIZE = 40 #dataset_size / batch size = # of steps 128
 _EVAL_BATCH_SIZE = 20 # 64 
 
+# 0. function block to get hyperparameters 
+####################################################################
+def _get_hyperparameters() -> keras_tuner.HyperParameters:
+    """Returns hyperparameters for building Keras model."""
+    hp = keras_tuner.HyperParameters()
+    # Defines search space.
+    hp.Choice('learning_rate', [1e-2, 1e-3, 1e-4], default=1e-3)
+    hp.Int('n_layers', 1, 2, default=2)
+    with hp.conditional_scope('n_layers', 1):
+        hp.Int('n_units_1', min_value=8, max_value=128, step=8, default=8)
+    with hp.conditional_scope('n_layers', 2):
+        hp.Int('n_units_1', min_value=8, max_value=128, step=8, default=8)
+        hp.Int('n_units_2', min_value=8, max_value=128, step=8, default=8)        
 
-# _FEATURE_SPEC = {
-#     **{
-#         feature: tf.io.FixedLenFeature(shape=[1], dtype=tf.float32)
-#            for feature in _FEATURE_KEYS
-#        },
-#     _LABEL_KEY: tf.io.FixedLenFeature(shape=[1], dtype=tf.float32)
-# }
+    return hp
+
+hparams=_get_hyperparameters()
+print('layers Jeff!!!!:',hparams.get('n_layers'))
 
 # 1. Input function to read the input to the main function block run_fn
 ####################################################################
@@ -69,6 +77,7 @@ def _make_keras_model(tf_transform_output: TFTransformOutput) -> tf.keras.Model:
     
     # build the hidden layers     
     output = tf.keras.layers.Concatenate()(tf.nest.flatten(inputs))
+    
     output = tf.keras.layers.Dense(100, activation='relu')(output)
     output = tf.keras.layers.Dense(70, activation='relu')(output)
     output = tf.keras.layers.Dense(50, activation='relu')(output)
@@ -99,7 +108,18 @@ def _make_keras_model(tf_transform_output: TFTransformOutput) -> tf.keras.Model:
 
 #     model.summary(print_fn=logging.info)
     # return model
-    return tf.keras.Model(inputs=inputs, outputs=output)
+    
+    # make model      
+    model = tf.keras.Model(inputs=inputs, outputs=output)
+    # compile the model     
+    model.compile(
+        optimizer=keras.optimizers.Adam(0.0001),
+        loss=tf.keras.losses.MeanSquaredError(),
+        metrics=[keras.metrics.MeanSquaredError(), keras.metrics.MeanAbsoluteError()])
+    # output model summary      
+    model.summary(print_fn=logging.info)
+    
+    return model
 
 # 3. function block relating to the training on vertex A.I
 ####################################################################
@@ -151,6 +171,7 @@ def _get_transform_features_signature(model, tf_transform_output):
       tf.TensorSpec(shape=[None], dtype=tf.string, name='examples')
     ])
     def transform_features_fn(serialized_tf_example):
+        
         """Returns the transformed_features to be fed as input to evaluator."""
         raw_feature_spec = tf_transform_output.raw_feature_spec()
         raw_features = tf.io.parse_example(serialized_tf_example, raw_feature_spec)
@@ -222,11 +243,11 @@ def run_fn(fn_args: tfx.components.FnArgs):
     #         model = _make_keras_model(tf_transform_output)
     
     model = _make_keras_model(tf_transform_output)
-    # compile the model     
-    model.compile(
-        optimizer=keras.optimizers.Adam(0.0001),
-        loss=tf.keras.losses.MeanSquaredError(),
-        metrics=[keras.metrics.MeanSquaredError(), keras.metrics.MeanAbsoluteError()])
+    # # compile the model     
+    # model.compile(
+    #     optimizer=keras.optimizers.Adam(0.0001),
+    #     loss=tf.keras.losses.MeanSquaredError(),
+    #     metrics=[keras.metrics.MeanSquaredError(), keras.metrics.MeanAbsoluteError()])
 
     tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=fn_args.model_run_dir, update_freq='batch')
     
