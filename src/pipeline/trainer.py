@@ -8,10 +8,12 @@ import tensorflow_transform as tft
 from tensorflow import keras
 from tensorflow_transform.tf_metadata import schema_utils
 from tensorflow_transform import TFTransformOutput
+
 from tfx import v1 as tfx
 from tfx_bsl.public import tfxio
 from tensorflow_metadata.proto.v0 import schema_pb2
 import keras_tuner
+from keras_tuner import HyperParameters
 
 _LABEL_KEY = 'trip_total'
 
@@ -25,17 +27,18 @@ def _get_hyperparameters() -> keras_tuner.HyperParameters:
     hp = keras_tuner.HyperParameters()
     # Defines search space.
     hp.Choice('learning_rate', [1e-2, 1e-3, 1e-4], default=1e-3)
-    hp.Int('n_layers', 1, 2, default=2)
+    hp.Int('n_layers', 1, 2, 3, default=3)
     with hp.conditional_scope('n_layers', 1):
-        hp.Int('n_units_1', min_value=8, max_value=128, step=8, default=8)
+        hp.Int('n_units_1', min_value=8, max_value=128, step=8, default=16)
     with hp.conditional_scope('n_layers', 2):
-        hp.Int('n_units_1', min_value=8, max_value=128, step=8, default=8)
-        hp.Int('n_units_2', min_value=8, max_value=128, step=8, default=8)        
+        hp.Int('n_units_1', min_value=8, max_value=128, step=8, default=16)
+        hp.Int('n_units_2', min_value=8, max_value=128, step=8, default=16)    
+    with hp.conditional_scope('n_layers', 3):
+        hp.Int('n_units_1', min_value=8, max_value=128, step=8, default=16)
+        hp.Int('n_units_2', min_value=8, max_value=128, step=8, default=16)  
+        hp.Int('n_units_3', min_value=8, max_value=128, step=8, default=16)  
 
     return hp
-
-hparams=_get_hyperparameters()
-print('layers Jeff!!!!:',hparams.get('n_layers'))
 
 # 1. Input function to read the input to the main function block run_fn
 ####################################################################
@@ -54,7 +57,14 @@ def _input_fn(file_pattern: List[str],
 
 # 2. function block to make the ANN
 ####################################################################
-def _make_keras_model(tf_transform_output: TFTransformOutput) -> tf.keras.Model:
+def _make_keras_model(hparams: HyperParameters,
+                      tf_transform_output: TFTransformOutput) -> tf.keras.Model:
+    
+    print('MY FIRST PARAM !')
+    print('LR Jeff!!!!:',hparams.get('learning_rate'))
+    print('layers Jeff!!!!:',hparams.get('n_layers'))
+    for n in range(int(hparams.get('n_layers'))):
+        print('layer',n,'is',hparams.get('n_units_' + str(n + 1)),'neurons')
     
     # read the inputs to the function 
     feature_spec = tf_transform_output.transformed_feature_spec().copy()
@@ -75,48 +85,29 @@ def _make_keras_model(tf_transform_output: TFTransformOutput) -> tf.keras.Model:
         else:
             raise ValueError('Spec type is not supported: ', key, spec)
     
-    # build the hidden layers     
+    # build the first input layer !     
     output = tf.keras.layers.Concatenate()(tf.nest.flatten(inputs))
     
-    output = tf.keras.layers.Dense(100, activation='relu')(output)
-    output = tf.keras.layers.Dense(70, activation='relu')(output)
-    output = tf.keras.layers.Dense(50, activation='relu')(output)
-    output = tf.keras.layers.Dense(20, activation='relu')(output)
+    # build the remaining layers based on the hparams
+    for n in range(int(hparams.get('n_layers'))):
+        print('Making layer:',n)
+        print('Number of neurons in this layer:', hparams.get('n_units_' + str(n + 1)))
+        output = tf.keras.layers.Dense(units=hparams.get('n_units_' + str(n + 1)), activation='relu')(output)
+    
+    # link to the output layer      
     output = tf.keras.layers.Dense(1, activation='linear')(output)
-    
-    # inputs = [keras.layers.Input(shape=(1,), name=f) for f in _FEATURE_KEYS]
-    # d = keras.layers.concatenate(inputs)
-    # for _ in range(2):
-    #     # d = keras.layers.Dense(8, activation='relu')(d)
-    #     d = keras.layers.Dense(64, activation='relu')(d)
-    #     d = keras.layers.Dense(32, activation='relu')(d)
-    #     d = keras.layers.Dense(16, activation='relu')(d)
-    #     # outputs = keras.layers.Dense(3)(d)
-    #     outputs = keras.layers.Dense(1, activation='linear')(d)
-
-    # model = keras.Model(inputs=inputs, outputs=outputs)
-
-  # model.compile(
-  #     optimizer=keras.optimizers.Adam(1e-2),
-  #     loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-  #     metrics=[keras.metrics.SparseCategoricalAccuracy()])
-    
-#     model.compile(
-#         optimizer=keras.optimizers.Adam(0.0001),
-#         loss=tf.keras.losses.MeanSquaredError(),
-#         metrics=[keras.metrics.MeanSquaredError(), keras.metrics.MeanAbsoluteError()])
-
-#     model.summary(print_fn=logging.info)
-    # return model
     
     # make model      
     model = tf.keras.Model(inputs=inputs, outputs=output)
+    
     # compile the model     
     model.compile(
         optimizer=keras.optimizers.Adam(0.0001),
         loss=tf.keras.losses.MeanSquaredError(),
         metrics=[keras.metrics.MeanSquaredError(), keras.metrics.MeanAbsoluteError()])
+    
     # output model summary      
+    print('Please see the model summary below:')
     model.summary(print_fn=logging.info)
     
     return model
@@ -216,16 +207,31 @@ def run_fn(fn_args: tfx.components.FnArgs):
     #Load the schema from Feature Specs
     # schema = schema_utils.schema_from_feature_spec(_FEATURE_SPEC)
     
-    # wrapper function to get the output of tftranform  
+    # if else logic here to get the parameter 
+    if fn_args.hyperparameters:
+        # load user defined params          
+        hparams = kerastuner.HyperParameters.from_config(fn_args.hyperparameters)
+        print('PLAN A')
+    else:
+        # load the default params from the function below          
+        hparams = _get_hyperparameters()
+        print('PLAN B')
+    # log the information     
+    print('HEY LOOK HERE !!!')
+    logging.info('HyperParameters for training: %s' % hparams.get_config())
+    
+    # wrapper function to get the output of tftranform 
     tf_transform_output = tft.TFTransformOutput(fn_args.transform_output)
     
+    # process the tf.examples into batches 
     train_dataset = _input_fn(
         fn_args.train_files,
         fn_args.data_accessor,
         # schema,
         tf_transform_output,
         batch_size=_TRAIN_BATCH_SIZE)
-
+    
+    # process the tf.examples into batches
     eval_dataset = _input_fn(
         fn_args.eval_files,
         fn_args.data_accessor,
@@ -242,12 +248,7 @@ def run_fn(fn_args: tfx.components.FnArgs):
     #     with strategy.scope():
     #         model = _make_keras_model(tf_transform_output)
     
-    model = _make_keras_model(tf_transform_output)
-    # # compile the model     
-    # model.compile(
-    #     optimizer=keras.optimizers.Adam(0.0001),
-    #     loss=tf.keras.losses.MeanSquaredError(),
-    #     metrics=[keras.metrics.MeanSquaredError(), keras.metrics.MeanAbsoluteError()])
+    model = _make_keras_model(hparams=hparams, tf_transform_output=tf_transform_output)
 
     tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=fn_args.model_run_dir, update_freq='batch')
     
