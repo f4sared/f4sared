@@ -29,7 +29,7 @@ def _get_hyperparameters(lr=1e-3,layer=3,neu=16) -> keras_tuner.HyperParameters:
     """Returns hyperparameters for building Keras model."""
     hp = keras_tuner.HyperParameters()
     # Defines search space.
-    hp.Choice('learning_rate', [1e-2, 1e-3, 1e-4], default=lr)
+    hp.Choice('learning_rate', [1e-1, 1e-2, 1e-3, 1e-4], default=lr)
     hp.Int('n_layers', 1, 2, 3, default=layer)
     with hp.conditional_scope('n_layers', 1):
         hp.Int('n_units_1', min_value=8, max_value=128, step=8, default=neu)
@@ -234,8 +234,8 @@ def run_fn(fn_args: tfx.components.FnArgs):
     #         model = _make_keras_model(tf_transform_output)
     
     # define search space      
-    LR = [0.01,0.001]
-    LAYER = [1,3]
+    LR = [0.001]
+    LAYER = [3]
     NEU = [8,16]
 
     mae = 1000.0 
@@ -281,7 +281,7 @@ def run_fn(fn_args: tfx.components.FnArgs):
     tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=fn_args.model_run_dir, update_freq='batch')
     model.fit(
         train_dataset,
-        epochs = 5,
+        epochs = 10,
         steps_per_epoch=fn_args.train_steps,
         validation_data=eval_dataset,
         validation_steps=fn_args.eval_steps, 

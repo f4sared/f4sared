@@ -29,7 +29,7 @@ def _get_hyperparameters(lr=1e-3,layer=3,neu=16) -> keras_tuner.HyperParameters:
     """Returns hyperparameters for building Keras model."""
     hp = keras_tuner.HyperParameters()
     # Defines search space.
-    hp.Choice('learning_rate', [1e-2, 1e-3, 1e-4], default=lr)
+    hp.Choice('learning_rate', [1e-1, 1e-2, 1e-3, 1e-4], default=lr)
     hp.Int('n_layers', 1, 2, 3, default=layer)
     with hp.conditional_scope('n_layers', 1):
         hp.Int('n_units_1', min_value=8, max_value=128, step=8, default=neu)
@@ -217,7 +217,7 @@ def run_fn(fn_args: tfx.components.FnArgs):
         print('PLAN A')
     else:
         # load the default params from the function below          
-        hparams = _get_hyperparameters()
+        hparams = _get_hyperparameters(lr=1e-3,layer=3,neu=16)
         print('PLAN B')
     # log the information     
     print('HEY LOOK HERE !!!')
@@ -257,13 +257,16 @@ def run_fn(fn_args: tfx.components.FnArgs):
     
     model.fit(
         train_dataset,
-        epochs = 3,
+        epochs = 10,
         steps_per_epoch=fn_args.train_steps,
         validation_data=eval_dataset,
         validation_steps=fn_args.eval_steps,
         callbacks=[tensorboard_callback])
     
-    
+    # evaluate performance of model      
+    results = model.evaluate(eval_dataset,batch_size=100,steps=50,return_dict=True,verbose=1)
+    # show the results      
+    print(results)
 
     # The result of the training should be saved in `fn_args.serving_model_dir`
     # directory.
@@ -288,7 +291,6 @@ def tuner_fn(fn_args: tfx.components.FnArgs) -> TunerFnResult:
         build_keras_model_fn,
         max_trials=10,
         hyperparameters=_get_hyperparameters(),
-      # New entries allowed for n_units hyperparameter construction conditional on n_layers selected.
         allow_new_entries=False,
         tune_new_entries=False,
         objective=keras_tuner.Objective('mean_absolute_error', 'min'),

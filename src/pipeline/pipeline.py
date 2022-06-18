@@ -107,7 +107,7 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
         transform_graph=transform.outputs['transform_graph'],
         schema=schema_gen.outputs['schema'],
         train_args=tfx.proto.TrainArgs(num_steps=1600), #66k/128
-        eval_args=tfx.proto.EvalArgs(num_steps=1600),).with_id('Tuner Custom') #34k/64
+        eval_args=tfx.proto.EvalArgs(num_steps=1600),).with_id('Trainer + Tuner Custom') #34k/64
         # custom_config={
         #     tfx.extensions.google_cloud_ai_platform.ENABLE_VERTEX_KEY:
         #         True,
@@ -118,6 +118,15 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
         #     'use_gpu':
         #         use_gpu,
         # })
+    
+    # NEW: RESOLVER Get the latest blessed model for Evaluator.
+    model_resolver = tfx.dsl.Resolver(
+        strategy_class=tfx.dsl.experimental.LatestBlessedModelStrategy,
+        model=tfx.dsl.Channel(type=tfx.types.standard_artifacts.Model),
+        model_blessing=tfx.dsl.Channel(
+          type=tfx.types.standard_artifacts.ModelBlessing)).with_id(
+              'latest_blessed_model_resolver')
+
     
     # Eval component      
     accuracy_threshold = tfma.MetricThreshold(
@@ -136,8 +145,10 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
     
     model_analyzer = tfx.components.Evaluator(
         examples=example_gen.outputs['examples'],
-        model=trainer.outputs['model'],
-        eval_config=eval_config)
+        model=trainer_tuner.outputs['model'],
+        eval_config=eval_config,
+        # baseline_model=trainer.outputs['model'],
+        baseline_model=model_resolver.outputs['model'],)
                 
     # # Uses user-provided Python function that trains a model.
     # trainer = tfx.components.Trainer(
@@ -187,12 +198,14 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
                 vertex_serving_spec,
         })
 
-   #  # Pushes the model to a filesystem destination.
-   # pusher = tfx.components.Pusher(
-   #      model=trainer.outputs['model'],
-   #      push_destination=tfx.proto.PushDestination(
-   #          filesystem=tfx.proto.PushDestination.Filesystem(
-   #              base_directory=serving_model_dir)))
+    # Pushes the model to a filesystem destination.
+    pusher_local = tfx.components.Pusher(
+        model=trainer_tuner.outputs['model'],
+        model_blessing=model_analyzer.outputs['blessing'],
+        push_destination=tfx.proto.PushDestination(
+        filesystem=tfx.proto.PushDestination.Filesystem(
+        # base_directory=serving_model_dir))).with_id('Pusher Local')
+        base_directory= 'gs://' + project_id +'/best_model'))).with_id('Pusher Local')
 
     # Following three components will be included in the pipeline.
     components = [
@@ -202,9 +215,11 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
         example_validator,
         transform,
         # tuner,
-        trainer,
+        # trainer,
         trainer_tuner,
-        # model_analyzer,
+        model_resolver,
+        model_analyzer,
+        pusher_local,
         # pusher,
     ]
 
