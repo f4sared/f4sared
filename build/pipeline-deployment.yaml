@@ -75,6 +75,18 @@ steps:
     id: "Upload tuner to GCS"
     waitFor: ["Upload trainer to GCS"]
 
+  # push to registry vertex
+  - name: "gcr.io/cloud-builders/gsutil"
+    args:
+      [
+        "cp",
+        "src/pipeline/trainer_vertex.py",
+        "gs://$PROJECT_ID/pipeline_module/chicago-vertex-pipelines/trainer_vertex.py",
+      ]
+    dir: "f4sared"
+    id: "Upload trainer to GCS"
+    waitFor: ["Upload tuner to GCS"]
+
   # build cicd image
   - name: "gcr.io/cloud-builders/docker"
     args:
@@ -86,7 +98,7 @@ steps:
       ]
     dir: "f4sared"
     id: "Build cicd image"
-    waitFor: ["Upload tuner to GCS"]
+    waitFor: ["Upload trainer to GCS"]
 
   # Compile the pipeline.
   - name: "us-central1-docker.pkg.dev/$PROJECT_ID/mle-pipeline/cicd:latest"

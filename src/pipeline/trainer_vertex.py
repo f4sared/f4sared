@@ -193,17 +193,8 @@ def export_serving_model(tf_transform_output, model, output_dir):
 # TFX Trainer  tfx.components.Trainer will call this function.
 def run_fn(fn_args: tfx.components.FnArgs):
     
-    # if else logic here to get the parameter 
-    if fn_args.hyperparameters:
-        # load user defined params          
-        hparams = kerastuner.HyperParameters.from_config(fn_args.hyperparameters)
-        print('PLAN A')
-    else:
-        # load the default params from the function below          
-        hparams = _get_hyperparameters()
-        print('PLAN B')
-    # log the information     
-    logging.info('HyperParameters for training: %s' % hparams.get_config())
+    # model = tf.keras.models.load_model(fn_args.base_model)
+    # print('MODEL LOADED!!')
     
     # wrapper function to get the output of tftranform 
     tf_transform_output = tft.TFTransformOutput(fn_args.transform_output)
@@ -224,69 +215,29 @@ def run_fn(fn_args: tfx.components.FnArgs):
         tf_transform_output,
         batch_size=_EVAL_BATCH_SIZE)
     
-    # NEW: If we have a distribution strategy, build a model in a strategy scope.
-    # make the model      
-    # strategy = _get_distribution_strategy(fn_args)
-    # if strategy is None:
-    #     model = _make_keras_model(tf_transform_output)
-    # else:
-    #     with strategy.scope():
-    #         model = _make_keras_model(tf_transform_output)
-    
-    # define search space      
-    LR = [0.001]
-    LAYER = [3]
-    NEU = [8,16]
-
-    mae = 1000.0 
-    ROUND_ID = 100000
-
-    best_lr = 0.0
-    best_layer = 0
-    best_neu = 0 
-    
-    ROUND = 0 
-    print('COMMENCE TUNING PROCESS ! ')    
-    for lr in LR: 
-        for layer in LAYER:
-            for neu in NEU: 
-                ROUND = ROUND + 1
-                print('STARTING TUNING ROUND:',ROUND,)
-                print('WITH','Learning Rate:',lr,'Layers:',layer,'Neurons Per Layer:',neu)
-                model = _make_keras_model(hparams=_get_hyperparameters(lr=lr,layer=layer,neu=neu), tf_transform_output=tf_transform_output)
-                model.fit(
-                    train_dataset,
-                    epochs = 5,
-                    steps_per_epoch=fn_args.train_steps,
-                    validation_data=eval_dataset,
-                    validation_steps=fn_args.eval_steps,)
-                results = model.evaluate(eval_dataset,batch_size=100,steps=50,return_dict=True,verbose=1)
-                print('End of round',ROUND,'here are the results:')
-                print(results)
-                if results['mean_absolute_error'] < mae: 
-                        best_lr = lr
-                        best_layer = layer
-                        best_neu = neu
-                        mae = results['mean_absolute_error']
-                        ROUND_ID = ROUND
-                        print('Best result thus far:','Round',ROUND_ID,'mae', mae)
-                        print('WITH','Learning Rate:',best_lr,'Layers:',best_layer,'Neurons Per Layer:',best_neu)
-                else: 
-                    print('THIS ROUND HAS BEEN DISCARDED')
-                    print('Best result thus far:','Round',ROUND_ID,'mae', mae)
-                    print('WITH','Learning Rate:',best_lr,'Layers:',best_layer,'Neurons Per Layer:',best_neu)
+    # NEW: If we have a distribution strategy, build a model in a strategy scope.      
+    strategy = _get_distribution_strategy(fn_args)
+    if strategy is None:
+        print('Situation A')
+        # model = _make_keras_model(tf_transform_output)
+        model = tf.keras.models.load_model(fn_args.base_model)
+        print('MODEL LOADED!!')
+    else:
+        print('Situation B')
+        with strategy.scope():
+            # model = _make_keras_model(tf_transform_output)
+            model = tf.keras.models.load_model(fn_args.base_model)
+            print('MODEL LOADED!!')
      
-    print('Starting final training !')
-    model = _make_keras_model(hparams=_get_hyperparameters(lr=best_lr,layer=best_layer,neu=best_neu), tf_transform_output=tf_transform_output)
+    print('Starting training !')
+    # model = _make_keras_model(hparams=_get_hyperparameters(lr=best_lr,layer=best_layer,neu=best_neu), tf_transform_output=tf_transform_output)
     tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=fn_args.model_run_dir, update_freq='batch')
     model.fit(
         train_dataset,
-        epochs = 1,
-        # steps_per_epoch=fn_args.train_steps,
-        steps_per_epoch=2, #only use 2 step, leave the rest to vertex
+        epochs = 10,
+        steps_per_epoch=fn_args.train_steps,
         validation_data=eval_dataset,
-        # validation_steps=fn_args.eval_steps, 
-        validation_steps=2, #only use 2 step, leave the rest to vertex
+        validation_steps=fn_args.eval_steps, 
         callbacks=[tensorboard_callback])
     
     # evaluate performance of model      
