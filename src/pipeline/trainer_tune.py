@@ -24,7 +24,7 @@ _TRAIN_BATCH_SIZE = 40 #dataset_size / batch size = # of steps 128
 _EVAL_BATCH_SIZE = 20 # 64 
 
 # 0. function block to get hyperparameters 
-####################################################################
+
 def _get_hyperparameters(lr=1e-3,layer=3,neu=16) -> keras_tuner.HyperParameters:
     """Returns hyperparameters for building Keras model."""
     hp = keras_tuner.HyperParameters()
@@ -44,7 +44,7 @@ def _get_hyperparameters(lr=1e-3,layer=3,neu=16) -> keras_tuner.HyperParameters:
     return hp
 
 # 1. Input function to read the input to the main function block run_fn
-####################################################################
+
 def _input_fn(file_pattern: List[str],
               data_accessor: tfx.components.DataAccessor,
               # schema: schema_pb2.Schema,
@@ -59,15 +59,9 @@ def _input_fn(file_pattern: List[str],
         tf_transform_output.transformed_metadata.schema)
 
 # 2. function block to make the ANN
-####################################################################
+
 def _make_keras_model(hparams: HyperParameters,
                       tf_transform_output: TFTransformOutput) -> tf.keras.Model:
-    
-    print('MY FIRST PARAM !')
-    print('LR Jeff!!!!:',hparams.get('learning_rate'))
-    print('layers Jeff!!!!:',hparams.get('n_layers'))
-    for n in range(int(hparams.get('n_layers'))):
-        print('layer',n,'is',hparams.get('n_units_' + str(n + 1)),'neurons')
     
     # read the inputs to the function 
     feature_spec = tf_transform_output.transformed_feature_spec().copy()
@@ -82,19 +76,16 @@ def _make_keras_model(hparams: HyperParameters,
         if isinstance(spec, tf.io.VarLenFeature):
             inputs[key] = tf.keras.layers.Input(shape=[None], name=key, dtype=spec.dtype, sparse=True)
         elif isinstance(spec, tf.io.FixedLenFeature):
-        # TODO(b/208879020): Move into schema such that spec.shape is [1] and not
-        # [] for scalars.
             inputs[key] = tf.keras.layers.Input(shape=spec.shape or [1], name=key, dtype=spec.dtype)  
         else:
             raise ValueError('Spec type is not supported: ', key, spec)
     
     # build the first input layer !     
     output = tf.keras.layers.Concatenate()(tf.nest.flatten(inputs))
+    print('we use:',hparams.get('learning_rate'),hparams.get('n_layers'), hparams.get('n_units_1'))
     
     # build the remaining layers based on the hparams
     for n in range(int(hparams.get('n_layers'))):
-        print('Making layer:',n)
-        print('Number of neurons in this layer:', hparams.get('n_units_' + str(n + 1)))
         output = tf.keras.layers.Dense(units=hparams.get('n_units_' + str(n + 1)), activation='relu')(output)
     
     # link to the output layer      
@@ -105,13 +96,13 @@ def _make_keras_model(hparams: HyperParameters,
     
     # compile the model     
     model.compile(
-        optimizer=keras.optimizers.Adam(0.0001),
+        optimizer=keras.optimizers.Adam(hparams.get('learning_rate')),
         loss=tf.keras.losses.MeanSquaredError(),
         metrics=[keras.metrics.MeanSquaredError(), keras.metrics.MeanAbsoluteError()])
     
     # output model summary      
-    print('Please see the model summary below:')
-    model.summary(print_fn=logging.info)
+    # print('Please see the model summary below:')
+    # model.summary(print_fn=logging.info)
     
     return model
 
@@ -126,7 +117,7 @@ def _get_distribution_strategy(fn_args: tfx.components.FnArgs):
     return None
 
 # fb 1 to be used in export_serving_model   
-####################################################################
+
 def _get_tf_examples_serving_signature(model, tf_transform_output):
     """Returns a serving signature that accepts `tensorflow.Example`."""
 
@@ -153,7 +144,7 @@ def _get_tf_examples_serving_signature(model, tf_transform_output):
     return serve_tf_examples_fn
 
 # fb 2 to be used in export_serving_model   
-####################################################################
+
 def _get_transform_features_signature(model, tf_transform_output):
   # """Returns a serving signature that applies tf.Transform to features."""
 
@@ -176,7 +167,7 @@ def _get_transform_features_signature(model, tf_transform_output):
     return transform_features_fn
 
 # function to save the trained model  
-####################################################################
+
 def export_serving_model(tf_transform_output, model, output_dir):
     """Exports a keras model for serving.
     Args:
@@ -201,14 +192,6 @@ def export_serving_model(tf_transform_output, model, output_dir):
 ####################################################################
 # TFX Trainer  tfx.components.Trainer will call this function.
 def run_fn(fn_args: tfx.components.FnArgs):
-
-    # This schema is usually either an output of SchemaGen or a manually-curated
-    # version provided by pipeline author. A schema can also derived from TFT
-    # graph if a Transform component is used. In the case when either is missing,
-    # `schema_from_feature_spec` could be used to generate schema from very simple
-    # feature_spec, but the schema returned would be very primitive.
-    #Load the schema from Feature Specs
-    # schema = schema_utils.schema_from_feature_spec(_FEATURE_SPEC)
     
     # if else logic here to get the parameter 
     if fn_args.hyperparameters:
@@ -220,7 +203,6 @@ def run_fn(fn_args: tfx.components.FnArgs):
         hparams = _get_hyperparameters()
         print('PLAN B')
     # log the information     
-    print('HEY LOOK HERE !!!')
     logging.info('HyperParameters for training: %s' % hparams.get_config())
     
     # wrapper function to get the output of tftranform 
@@ -251,78 +233,75 @@ def run_fn(fn_args: tfx.components.FnArgs):
     #     with strategy.scope():
     #         model = _make_keras_model(tf_transform_output)
     
-    model = _make_keras_model(hparams=hparams, tf_transform_output=tf_transform_output)
+    # define search space      
+    LR = [0.01,0.001]
+    LAYER = [1,3]
+    NEU = [8,16]
 
-    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=fn_args.model_run_dir, update_freq='batch')
+    mae = 1000.0 
+    ROUND_ID = 100000
+
+    best_lr = 0.0
+    best_layer = 0
+    best_neu = 0 
     
+    ROUND = 0 
+    print('COMMENCE TUNING PROCESS ! ')    
+    for lr in LR: 
+        for layer in LAYER:
+            for neu in NEU: 
+                ROUND = ROUND + 1
+                print('STARTING TUNING ROUND:',ROUND,)
+                print('WITH','Learning Rate:',lr,'Layers:',layer,'Neurons Per Layer:',neu)
+                model = _make_keras_model(hparams=_get_hyperparameters(lr=lr,layer=layer,neu=neu), tf_transform_output=tf_transform_output)
+                model.fit(
+                    train_dataset,
+                    epochs = 5,
+                    steps_per_epoch=fn_args.train_steps,
+                    validation_data=eval_dataset,
+                    validation_steps=fn_args.eval_steps,)
+                results = model.evaluate(eval_dataset,batch_size=100,steps=50,return_dict=True,verbose=1)
+                print('End of round',ROUND,'here are the results:')
+                print(results)
+                if results['mean_absolute_error'] < mae: 
+                        best_lr = lr
+                        best_layer = layer
+                        best_neu = neu
+                        mae = results['mean_absolute_error']
+                        ROUND_ID = ROUND
+                        print('Best result thus far:','Round',ROUND_ID,'mae', mae)
+                        print('WITH','Learning Rate:',best_lr,'Layers:',best_layer,'Neurons Per Layer:',best_neu)
+                else: 
+                    print('THIS ROUND HAS BEEN DISCARDED')
+                    print('Best result thus far:','Round',ROUND_ID,'mae', mae)
+                    print('WITH','Learning Rate:',best_lr,'Layers:',best_layer,'Neurons Per Layer:',best_neu)
+     
+    print('Starting final training !')
+    model = _make_keras_model(hparams=_get_hyperparameters(lr=best_lr,layer=best_layer,neu=best_neu), tf_transform_output=tf_transform_output)
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=fn_args.model_run_dir, update_freq='batch')
     model.fit(
         train_dataset,
-        epochs = 3,
+        epochs = 5,
         steps_per_epoch=fn_args.train_steps,
         validation_data=eval_dataset,
-        validation_steps=fn_args.eval_steps,
+        validation_steps=fn_args.eval_steps, 
         callbacks=[tensorboard_callback])
     
-    
+    # evaluate performance of model      
+    results = model.evaluate(eval_dataset,batch_size=100,steps=50,return_dict=True,verbose=1)
+    # show the results      
+    print(results)
 
-    # The result of the training should be saved in `fn_args.serving_model_dir`
-    # directory.
+    # The result of the training should be saved in `fn_args.serving_model_dir` directory.
     # model.save(fn_args.serving_model_dir, save_format='tf')
     print('Saved Here !!!',fn_args.serving_model_dir)
     export_serving_model(tf_transform_output, model, fn_args.serving_model_dir)
 
-# tuner function block 
-####################################################################    
-def tuner_fn(fn_args: tfx.components.FnArgs) -> TunerFnResult:
-    
-#########################################################################################    
-    
-    # wrapper function to get the output of tftranform 
-    tf_transform_output = tft.TFTransformOutput(fn_args.transform_output)
-    
-    # Construct a build_keras_model_fn that just takes hyperparams from get_hyperparameters as input.
-    build_keras_model_fn = functools.partial(_make_keras_model, tf_transform_output=tf_transform_output) 
-    
-    # BayesianOptimization is a subclass of kerastuner.Tuner which inherits from BaseTuner.    
-    tuner = keras_tuner.BayesianOptimization(
-        build_keras_model_fn,
-        max_trials=10,
-        hyperparameters=_get_hyperparameters(),
-      # New entries allowed for n_units hyperparameter construction conditional on n_layers selected.
-        allow_new_entries=False,
-        tune_new_entries=False,
-        objective=keras_tuner.Objective('mean_absolute_error', 'min'),
-        directory=fn_args.working_dir,
-        # directory='gs://licheng-test-06/pipeline_broot/chicago-vertex-pipelines/working-directory',
-        project_name='covertype_tuning')
-    
-    train_dataset = _input_fn(
-      fn_args.train_files,
-      fn_args.data_accessor,
-      tf_transform_output,
-      batch_size=_TRAIN_BATCH_SIZE)
-
-    eval_dataset = _input_fn(
-      fn_args.eval_files,
-      fn_args.data_accessor,
-      tf_transform_output,
-      batch_size=_EVAL_BATCH_SIZE)
-    
-    return TunerFnResult(
-      tuner=tuner,
-      fit_kwargs={
-          'x': train_dataset,
-          'validation_data': eval_dataset,
-          'steps_per_epoch': fn_args.train_steps,
-          'validation_steps': fn_args.eval_steps
-      })
-    
-#########################################################################################
 
 #########################################################################################
-#########################################################################################
+# ########################################################################################
 # For transform component 
-#########################################################################################
+# ########################################################################################
 # import tensorflow_transform as tft
 # import tensorflow as tf
 

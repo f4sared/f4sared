@@ -64,22 +64,27 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
 
     example_validator = tfx.components.ExampleValidator(statistics=statistics_gen.outputs['statistics'],schema=schema_gen.outputs['schema'])
     
-    transform = tfx.components.Transform(
-    examples=example_gen.outputs['examples'],
-    schema=schema_gen.outputs['schema'],
-    module_file=module_file)
-
+    transform = tfx.components.Transform(examples=example_gen.outputs['examples'],
+                                         schema=schema_gen.outputs['schema'],module_file=module_file)
+    
+    
+    # tuner component      
+    tuner = tfx.components.Tuner(
+        module_file=module_file,
+        examples=transform.outputs['transformed_examples'],
+        transform_graph=transform.outputs['transform_graph'],
+        train_args=tfx.proto.TrainArgs(num_steps=1600),
+        eval_args=tfx.proto.EvalArgs(num_steps=1600),)
+    
+    
     # Trains a model using Vertex AI Training.
     # NEW: We need to specify a Trainer for GCP with related configs.
     # trainer = tfx.extensions.google_cloud_ai_platform.Trainer(
     trainer = tfx.components.Trainer(
         module_file=module_file,
-        # examples=example_gen.outputs['examples'],
-        #############
         examples=transform.outputs['transformed_examples'],
         transform_graph=transform.outputs['transform_graph'],
         schema=schema_gen.outputs['schema'],
-        #############
         train_args=tfx.proto.TrainArgs(num_steps=1600), #66k/128
         eval_args=tfx.proto.EvalArgs(num_steps=1600),) #34k/64
         # custom_config={
@@ -93,6 +98,26 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
         #         use_gpu,
         # })
 
+    # Trains a model using Vertex AI Training.
+    # NEW: We need to specify a Trainer for GCP with related configs.
+    # trainer = tfx.extensions.google_cloud_ai_platform.Trainer(
+    trainer_tuner = tfx.components.Trainer(
+        module_file=module_file[:-3]+'_tune.py',
+        examples=transform.outputs['transformed_examples'],
+        transform_graph=transform.outputs['transform_graph'],
+        schema=schema_gen.outputs['schema'],
+        train_args=tfx.proto.TrainArgs(num_steps=1600), #66k/128
+        eval_args=tfx.proto.EvalArgs(num_steps=1600),).with_id('Tuner Custom') #34k/64
+        # custom_config={
+        #     tfx.extensions.google_cloud_ai_platform.ENABLE_VERTEX_KEY:
+        #         True,
+        #     tfx.extensions.google_cloud_ai_platform.VERTEX_REGION_KEY:
+        #         region,
+        #     tfx.extensions.google_cloud_ai_platform.TRAINING_ARGS_KEY:
+        #         vertex_job_spec,
+        #     'use_gpu':
+        #         use_gpu,
+        # })
     
     # Eval component      
     accuracy_threshold = tfma.MetricThreshold(
@@ -176,9 +201,11 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
         schema_gen,
         example_validator,
         transform,
+        # tuner,
         trainer,
-        model_analyzer,
-        pusher,
+        trainer_tuner,
+        # model_analyzer,
+        # pusher,
     ]
 
     return tfx.dsl.Pipeline(
