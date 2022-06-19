@@ -14,22 +14,7 @@ _trainer_module_file = 'trainer.py'
 def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
                      module_file: str, serving_model_dir: str, endpoint_name: str, project_id: str, region: str, use_gpu: bool
                      ) -> tfx.dsl.Pipeline:
-    """_summary_
 
-    Args:
-        pipeline_name (str): 
-        pipeline_root (str):
-        data_root (str): 
-        module_file (str): 
-        serving_model_dir (str):
-        endpoint_name (str): 
-        project_id (str): 
-        region (str):
-        use_gpu (bool): 
-
-    Returns:
-        tfx.dsl.Pipeline: _description_
-    """
   # NEW: Configuration for Vertex AI Training.
   # This dictionary will be passed as `CustomJobSpec`.
     vertex_job_spec = {
@@ -79,7 +64,7 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
     #05 components to transform the examples
     ########################################
     transform = tfx.components.Transform(examples=example_gen.outputs['examples'],
-                                         schema=schema_gen.outputs['schema'],module_file=module_file)
+                                         schema=schema_gen.outputs['schema'],module_file=module_file[:-3]+'_transform.py')
     
     
     # # tuner component      
@@ -94,13 +79,13 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
     # Trains a model using Vertex AI Training.
     # NEW: We need to specify a Trainer for GCP with related configs.
     # trainer = tfx.extensions.google_cloud_ai_platform.Trainer(
-    trainer = tfx.components.Trainer(
-        module_file=module_file,
-        examples=transform.outputs['transformed_examples'],
-        transform_graph=transform.outputs['transform_graph'],
-        schema=schema_gen.outputs['schema'],
-        train_args=tfx.proto.TrainArgs(num_steps=1600), #66k/128
-        eval_args=tfx.proto.EvalArgs(num_steps=1600),) #34k/64
+    # trainer = tfx.components.Trainer(
+    #     module_file=module_file[:-3]+'_transform.py',
+    #     examples=transform.outputs['transformed_examples'],
+    #     transform_graph=transform.outputs['transform_graph'],
+    #     schema=schema_gen.outputs['schema'],
+    #     train_args=tfx.proto.TrainArgs(num_steps=1600), #66k/128
+    #     eval_args=tfx.proto.EvalArgs(num_steps=1600),) #34k/64
         # custom_config={
         #     tfx.extensions.google_cloud_ai_platform.ENABLE_VERTEX_KEY:
         #         True,
@@ -134,7 +119,7 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
         # })
         
     ########################################
-    #08 submit job to vertex training 
+    #07 submit job to vertex training 
     ########################################
     # trainer_vertex = tfx.components.Trainer(
     trainer_vertex = tfx.extensions.google_cloud_ai_platform.Trainer(
@@ -157,7 +142,7 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
         }).with_id('Trainer Vertex')
     
     ########################################
-    # 07 resolver to find the latest blessed model
+    # 08 resolver to find the latest blessed model
     # if the latest blessed model doesn not exist, the component will ignore and auto bless current model     
     # NEW: RESOLVER Get the latest blessed model for Evaluator.
     ########################################
@@ -185,7 +170,7 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
     eval_config = tfma.EvalConfig(model_specs=[tfma.ModelSpec(label_key='trip_total')], metrics_specs=[metrics_specs], slicing_specs=[tfma.SlicingSpec()])
     
     ########################################
-    # 08 evaluator component 
+    # 09 evaluator component 
     ########################################
     model_analyzer = tfx.components.Evaluator(
         examples=example_gen.outputs['examples'],
@@ -193,14 +178,10 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
         eval_config=eval_config,
         # baseline_model=trainer.outputs['model'],
         baseline_model=model_resolver.outputs['model'],)
-                
-    # # Uses user-provided Python function that trains a model.
-    # trainer = tfx.components.Trainer(
-    #     module_file=module_file,
-    #     examples=example_gen.outputs['examples'],
-    #     train_args=tfx.proto.TrainArgs(num_steps=1500), #100
-    #     eval_args=tfx.proto.EvalArgs(num_steps=1500)) #5
-        
+    
+    ########################################
+    # 10 Pushes the model to a filesystem destination.
+    ########################################
     # NEW: Configuration for pusher.
     vertex_serving_spec = {
         'project_id': project_id,
@@ -212,7 +193,7 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
         # Machine type is the compute resource to serve prediction requests.
         # See https://cloud.google.com/vertex-ai/docs/predictions/configure-compute#machine-types
         # for available machine types and acccerators.
-        'machine_type': 'n1-standard-4',
+        'machine_type': 'n1-standard-2',
     }
     
     # Vertex AI provides pre-built containers with various configurations for
@@ -228,8 +209,8 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
         serving_image = 'us-docker.pkg.dev/vertex-ai/prediction/tf2-gpu.2-6:latest'
         
     # NEW: Pushes the model to Vertex AI.
-    pusher = tfx.extensions.google_cloud_ai_platform.Pusher(
-        model=trainer.outputs['model'],
+    pusher_vertex = tfx.extensions.google_cloud_ai_platform.Pusher(
+        model=trainer_vertex.outputs['model'],
         model_blessing=model_analyzer.outputs['blessing'],
         custom_config={
             tfx.extensions.google_cloud_ai_platform.ENABLE_VERTEX_KEY:
@@ -240,18 +221,22 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
                 serving_image,
             tfx.extensions.google_cloud_ai_platform.SERVING_ARGS_KEY:
                 vertex_serving_spec,
-        })
+        }).with_id('Pusher Vertex')
+    
     ########################################
-    # 10 Pushes the model to a filesystem destination.
+    # 11 Pushes the model to a filesystem destination.
     ########################################
     pusher_local = tfx.components.Pusher(
-        model=tuner_custom.outputs['model'],
+        model=trainer_vertex.outputs['model'],
         model_blessing=model_analyzer.outputs['blessing'],
         push_destination=tfx.proto.PushDestination(
         filesystem=tfx.proto.PushDestination.Filesystem(
         # base_directory=serving_model_dir))).with_id('Pusher Local')
         base_directory= 'gs://' + project_id +'/best_model'))).with_id('Pusher Local')
 
+    ########################################
+    # 12 Select the components you want to activate
+    ########################################
     # Following three components will be included in the pipeline.
     components = [
         example_gen,
@@ -265,8 +250,8 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
         trainer_vertex,
         model_resolver,
         model_analyzer,
-        # pusher_local,
-        # pusher,
+        pusher_local,
+        pusher_vertex,
     ]
 
     return tfx.dsl.Pipeline(

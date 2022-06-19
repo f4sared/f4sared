@@ -56,11 +56,11 @@ steps:
     args:
       [
         "cp",
-        "src/pipeline/trainer.py",
-        "gs://$PROJECT_ID/pipeline_module/chicago-vertex-pipelines/trainer.py",
+        "src/pipeline/trainer_transform.py",
+        "gs://$PROJECT_ID/pipeline_module/chicago-vertex-pipelines/trainer_transform.py",
       ]
     dir: "f4sared"
-    id: "Upload trainer to GCS"
+    id: "Upload transform to GCS"
     waitFor: ["Build TFX Image"]
 
   # push to registry tuner
@@ -73,7 +73,7 @@ steps:
       ]
     dir: "f4sared"
     id: "Upload tuner to GCS"
-    waitFor: ["Upload trainer to GCS"]
+    waitFor: ["Upload transform to GCS"]
 
   # push to registry vertex
   - name: "gcr.io/cloud-builders/gsutil"
