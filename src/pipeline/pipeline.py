@@ -185,7 +185,7 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
     eval_config = tfma.EvalConfig(model_specs=[tfma.ModelSpec(label_key='trip_total')], 
                                   metrics_specs=[metrics_specs], 
                                   slicing_specs=[tfma.SlicingSpec(),
-                                                tfma.SlicingSpec(feature_keys=['monday']),
+                                                # tfma.SlicingSpec(feature_keys=['monday']),
                                                 tfma.SlicingSpec(feature_keys=['tuesday']),])
     
     model_analyzer = tfx.components.Evaluator(
