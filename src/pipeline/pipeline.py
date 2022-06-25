@@ -62,8 +62,8 @@ def _create_pipeline(pipeline_name: str, pipeline_root: str, data_root: str,
     
     #######################################
     # 05 choose the schema 
-    schema_choice = ImportSchemaGen.outputs['schema']
-    # schema_choice = schema_gen.outputs['schema']
+    # schema_choice = ImportSchemaGen.outputs['schema']
+    schema_choice = schema_gen.outputs['schema']
     #######################################
     
     ########################################
